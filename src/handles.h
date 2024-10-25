@@ -12,12 +12,12 @@ extern "C" {
 }
 
 namespace mtr{
-
     struct info{
         std::string input_url = {};
         std::string output_url = {}; 
         f32 resolution_scale = 0.5f;
         i32 video_bitrate = 4096;
+        i32 audio_bitrate = 128;
     };
 
     struct handle{
@@ -35,6 +35,7 @@ namespace mtr{
         AVPacket* enc_pkt = nullptr;
     };
 
+    const info get_info(const std::string& file_path);
     b8 init(handle* handle, const info& info);
     void process(handle* handle);
     void cleanup(handle* handle);

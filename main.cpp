@@ -15,11 +15,7 @@
 
 i32 main(i32 argc, char const *argv[])
 {
-    mtr::info info = {};
-    info.input_url = "";
-    info.output_url = "";
-    info.resolution_scale = 0.5f;
-    info.video_bitrate = 4096;
+    mtr::info info = mtr::get_info("config.json");
 
     mtr::handle* handle = new mtr::handle();
 

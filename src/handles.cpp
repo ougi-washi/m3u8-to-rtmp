@@ -1,7 +1,37 @@
 #include "handles.h"
 #include <iostream>
+#include <fstream>
+#include "utility.h"
+#include "json/json.h"
 
-b8 mtr::init(handle *handle, const info &info){
+using json = nlohmann::json;
+
+template<typename T>
+void set(T& target, const json& j, const std::string& key){
+    if(j.contains(key)){
+        target = j[key].get<T>();
+    }
+}
+
+const mtr::info mtr::get_info(const std::string &file_path){
+    if (!std::filesystem::exists(mtr::root_path + file_path)){
+        std::cerr << "Error: Could not find file " << file_path << std::endl;
+        return {};
+    }
+    std::ifstream parsed_file(mtr::root_path + file_path);
+    json json;
+    parsed_file >> json;
+    mtr::info info = {};
+    set(info.input_url,         json, "input_url");
+    set(info.output_url,        json, "output_url");
+    set(info.resolution_scale,  json, "resolution_scale");
+    set(info.video_bitrate,     json, "video_bitrate");
+    set(info.audio_bitrate,     json, "audio_bitrate");
+    return info;
+}
+
+b8 mtr::init(handle *handle, const info &info)
+{
     const char* input_url = info.input_url.c_str();
     const char* output_url = info.output_url.c_str();
 
