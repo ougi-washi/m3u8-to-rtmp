@@ -24,8 +24,8 @@ const mtr::info mtr::get_info(const std::string &file_path){
     mtr::info info = {};
     set(info.input_url,         json, "input_url");
     set(info.output_url,        json, "output_url");
-    set(info.resolution_scale,  json, "resolution_scale");
     set(info.video_bitrate,     json, "video_bitrate");
+    set(info.gop_size,          json, "gop_size");
     set(info.audio_bitrate,     json, "audio_bitrate");
     return info;
 }
@@ -104,13 +104,13 @@ b8 mtr::init(handle *handle, const info &info)
 
     handle->encoder_ctx = avcodec_alloc_context3(handle->encoder);
 
-    handle->encoder_ctx->bit_rate = 4096; // Set desired bitrate
+    handle->encoder_ctx->bit_rate = info.video_bitrate; // Set desired bitrate
     handle->encoder_ctx->width = handle->decoder_ctx->width;
     handle->encoder_ctx->height = handle->decoder_ctx->height;
     handle->encoder_ctx->time_base = handle->input_format_context->streams[handle->video_stream_index]->time_base;
     handle->encoder_ctx->pix_fmt = AV_PIX_FMT_CUDA; // Use CUDA pixel format
     handle->encoder_ctx->max_b_frames = 0;
-    handle->encoder_ctx->gop_size = 12; // Adjust GOP size as needed
+    handle->encoder_ctx->gop_size = info.gop_size;
 
     // Set the hardware frames context for encoding
     handle->hw_frames_ctx = av_hwframe_ctx_alloc(handle->hw_device_ctx);

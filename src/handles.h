@@ -15,24 +15,32 @@ namespace mtr{
     struct info{
         std::string input_url = {};
         std::string output_url = {}; 
-        f32 resolution_scale = 0.5f;
         i32 video_bitrate = 4096;
+        i32 gop_size = 12;
         i32 audio_bitrate = 128;
     };
-
-    struct handle{
-        AVBufferRef* hw_device_ctx = nullptr;
+    
+    struct handle {
         AVFormatContext* input_format_context = nullptr;
-        AVCodec* decoder = nullptr;
-        AVCodecContext* decoder_ctx = nullptr;
-        int video_stream_index = -1;
         AVFormatContext* output_format_context = nullptr;
-        AVCodec* encoder = nullptr;
-        AVStream* out_stream = nullptr;
+        AVCodecContext* decoder_ctx = nullptr;
         AVCodecContext* encoder_ctx = nullptr;
-        AVBufferRef* hw_frames_ctx = nullptr;
-        AVFrame* frame = nullptr;
+        AVCodecContext* audio_decoder_ctx = nullptr;
+        AVCodecContext* audio_encoder_ctx = nullptr;
+        AVStream* out_stream = nullptr;
+        AVStream* audio_out_stream = nullptr;
         AVPacket* enc_pkt = nullptr;
+        AVPacket* audio_enc_pkt = nullptr;
+        AVFrame* frame = nullptr;
+        AVFrame* audio_frame = nullptr;
+        i32 video_stream_index = -1;
+        i32 audio_stream_index = -1;
+        AVCodec* decoder = nullptr;
+        AVCodec* encoder = nullptr;
+        AVCodec* audio_decoder = nullptr;
+        AVCodec* audio_encoder = nullptr;
+        AVBufferRef* hw_device_ctx = nullptr;
+        AVBufferRef* hw_frames_ctx = nullptr;
     };
 
     const info get_info(const std::string& file_path);
