@@ -16,8 +16,8 @@ namespace mtr{
     struct info{
         std::string input_url = {};
         std::string output_url = {}; 
-        const f32 resolution_scale = 0.5f;
-        const i32 video_bitrate = 4096;
+        f32 resolution_scale = 0.5f;
+        i32 video_bitrate = 4096;
     };
 
     struct handle{
@@ -36,6 +36,6 @@ namespace mtr{
     };
 
     b8 init(handle* handle, const info& info);
+    void process(handle* handle);
+    void cleanup(handle* handle);
 }
-
-
