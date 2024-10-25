@@ -36,6 +36,7 @@ b8 mtr::init(handle *handle, const info &info)
     const char* output_url = info.output_url.c_str();
 
     avformat_network_init();
+    av_log_set_level(AV_LOG_VERBOSE);
 
     // Input format context
     if (avformat_open_input(&handle->input_format_context, input_url, nullptr, nullptr) < 0) {
@@ -104,7 +105,7 @@ b8 mtr::init(handle *handle, const info &info)
 
     handle->encoder_ctx = avcodec_alloc_context3(handle->encoder);
 
-    handle->encoder_ctx->bit_rate = info.video_bitrate; // Set desired bitrate
+    handle->encoder_ctx->bit_rate = info.video_bitrate * 1000; // Set desired bitrate
     handle->encoder_ctx->width = handle->decoder_ctx->width;
     handle->encoder_ctx->height = handle->decoder_ctx->height;
     handle->encoder_ctx->time_base = handle->input_format_context->streams[handle->video_stream_index]->time_base;
@@ -162,9 +163,55 @@ b8 mtr::init(handle *handle, const info &info)
         std::cerr << "Error: Could not write header to output" << std::endl;
         return -1;
     }
-
     handle->frame = av_frame_alloc();
-    handle->enc_pkt = av_packet_alloc();    
+    handle->enc_pkt = av_packet_alloc();
+
+    // Audio
+    for (i32 i = 0; i < handle->input_format_context->nb_streams; i++) {
+        if (handle->input_format_context->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            handle->audio_stream_index = i;
+            handle->audio_decoder = avcodec_find_decoder(handle->input_format_context->streams[i]->codecpar->codec_id);
+            if (!handle->audio_decoder) {
+                std::cerr << "Error: Could not find audio decoder" << std::endl;
+                return false;
+            }
+
+            handle->audio_decoder_ctx = avcodec_alloc_context3(handle->audio_decoder);
+            avcodec_parameters_to_context(handle->audio_decoder_ctx, handle->input_format_context->streams[i]->codecpar);
+
+            if (avcodec_open2(handle->audio_decoder_ctx, handle->audio_decoder, nullptr) < 0) {
+                std::cerr << "Error: Could not open audio decoder" << std::endl;
+                return false;
+            }
+            break;
+        }
+    }
+
+    handle->audio_encoder = avcodec_find_encoder(AV_CODEC_ID_AAC);  // Change based on your desired format
+    if (!handle->audio_encoder) {
+        std::cerr << "Error: Could not find audio encoder" << std::endl;
+        return false;
+    }
+
+    handle->audio_out_stream = avformat_new_stream(handle->output_format_context, handle->audio_encoder);
+    handle->audio_encoder_ctx = avcodec_alloc_context3(handle->audio_encoder);
+
+    handle->audio_encoder_ctx->sample_rate = handle->audio_decoder_ctx->sample_rate;
+    handle->audio_encoder_ctx->channel_layout = handle->audio_decoder_ctx->channel_layout;
+    handle->audio_encoder_ctx->channels = av_get_channel_layout_nb_channels(handle->audio_encoder_ctx->channel_layout);
+    handle->audio_encoder_ctx->sample_fmt = handle->audio_encoder->sample_fmts[0];  // Set compatible format
+    handle->audio_encoder_ctx->bit_rate = info.audio_bitrate * 1000;  // Adjust as needed
+
+    if (avcodec_open2(handle->audio_encoder_ctx, handle->audio_encoder, nullptr) < 0) {
+        std::cerr << "Error: Could not open audio encoder" << std::endl;
+        return false;
+    }
+
+    avcodec_parameters_from_context(handle->audio_out_stream->codecpar, handle->audio_encoder_ctx);
+    
+    handle->audio_frame = av_frame_alloc();
+    handle->audio_enc_pkt = av_packet_alloc();
+
     return true;
 }
 
@@ -173,7 +220,7 @@ void mtr::process(handle *handle){
     while (av_read_frame(handle->input_format_context, &packet) >= 0) {
         std::cout << "Read frame: " << packet.stream_index << " of size " << packet.size << std::endl;
         if (packet.stream_index == handle->video_stream_index) {
-            int ret = avcodec_send_packet(handle->decoder_ctx, &packet);
+            i32 ret = avcodec_send_packet(handle->decoder_ctx, &packet);
             if (ret < 0) {
                 std::cerr << "Error sending packet for decoding" << std::endl;
                 break;
@@ -220,8 +267,66 @@ void mtr::process(handle *handle){
                 }
             }
         }
+        else if (packet.stream_index == handle->audio_stream_index) {
+            i32 ret = avcodec_send_packet(handle->audio_decoder_ctx, &packet);
+            if (ret < 0) {
+                std::cerr << "Error sending audio packet for decoding" << std::endl;
+                break;
+            }
+
+            // ret = avcodec_receive_packet(handle->audio_encoder_ctx, handle->audio_enc_pkt);
+            // if (ret < 0) {
+            //     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            //         return; // no packet to write yet
+            //     } else {
+            //         std::cerr << "Error receiving audio packet" << std::endl;
+            //         return;
+            //     }
+            // }
+
+            while (ret >= 0) {
+                ret = avcodec_receive_frame(handle->audio_decoder_ctx, handle->audio_frame);
+                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                    break;
+                } else if (ret < 0) {
+                    std::cerr << "Error during audio decoding" << std::endl;
+                    return;
+                }
+
+                ret = avcodec_send_frame(handle->audio_encoder_ctx, handle->audio_frame);
+                if (ret < 0) {
+                    std::cerr << "Error sending audio frame to encoder" << std::endl;
+                    return;
+                }
+
+                while (ret >= 0) {
+                    ret = avcodec_receive_packet(handle->audio_encoder_ctx, handle->audio_enc_pkt);
+                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                        break;
+                    } else if (ret < 0) {
+                        std::cerr << "Error during audio encoding" << std::endl;
+                        return;
+                    }
+
+                    handle->audio_enc_pkt->stream_index = handle->audio_out_stream->index;
+                    ret = avcodec_receive_frame(handle->audio_decoder_ctx, handle->audio_frame);
+
+                    // if (handle->audio_enc_pkt && handle->audio_enc_pkt->data && handle->audio_enc_pkt->size > 0) {
+                    //     i32 ret = av_interleaved_write_frame(handle->output_format_context, handle->audio_enc_pkt);
+                    //     if (ret < 0) {
+                    //         char err_buf[AV_ERROR_MAX_STRING_SIZE];
+                    //         std::cerr << "Error: writing audio packet: " << av_make_error_string(err_buf, AV_ERROR_MAX_STRING_SIZE, ret);
+                    //     }
+                    //     av_packet_unref(handle->audio_enc_pkt);  // Free packet for reuse
+                    // } else {
+                    //     fprintf(stderr, "Invalid packet: No data or size\n");
+                    // }
+                }
+            }
+        }
         av_packet_unref(&packet);
     }
+    std::cout << "Finished processing" << std::endl;
 }
 
 void mtr::cleanup(handle *handle){
@@ -234,13 +339,20 @@ void mtr::cleanup(handle *handle){
 
     av_write_trailer(handle->output_format_context);
 
-    // Cleanup
+    // Video
     av_frame_free(&handle->frame);
     avcodec_free_context(&handle->encoder_ctx);
     avcodec_free_context(&handle->decoder_ctx);
     av_buffer_unref(&handle->hw_frames_ctx);
     av_buffer_unref(&handle->hw_device_ctx);
     avformat_close_input(&handle->input_format_context);
+    // Audio
+    avcodec_free_context(&handle->audio_encoder_ctx);
+    avcodec_free_context(&handle->audio_decoder_ctx);
+    av_frame_free(&handle->audio_frame);
+    av_packet_free(&handle->audio_enc_pkt);
+
+    // Final
     if (!(handle->output_format_context->oformat->flags & AVFMT_NOFILE)) {
         avio_closep(&handle->output_format_context->pb);
     }

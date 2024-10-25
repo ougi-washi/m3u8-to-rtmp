@@ -1,7 +1,7 @@
 {
     "input_url" : "",
     "output_url" : "",
-    "video_bitrate" : 4000000,
+    "video_bitrate" : 4000,
     "gop_size" : 12,
     "audio_bitrate" : 128
 }
